@@ -1,4 +1,5 @@
 # The first attempt did not work.  Try ignoring the background pixels for loss.
+# Using 0.05 as a cutoff
 
 # Forward model:
 # Input: (3,k) matrix of x,y,a triples.
@@ -8,6 +9,7 @@
 # x[1,k],x[2,k] in [0,1], x[3,k] in [.2,.4]?
 
 lambda = 2500.0
+cutoff = 0.05
 
 function mforw{T}(x::Matrix{T},y::Matrix{T})
     fill!(y,0)
@@ -29,11 +31,17 @@ function mloss{T}(ypred::Matrix{T},ygold::Matrix{T})
     0.5*vecnorm(ypred-ygold)^2
 end
 
+function mlossxy{T}(x::Matrix{T},ygold::Matrix{T})
+    ypred = similar(ygold)
+    mforw(x, ypred)
+    mloss(ypred, ygold)
+end
+
 # Backward gradient:
 function mback{T}(x::Matrix{T},ypred::Matrix{T},ygold::Matrix{T},dx::Matrix{T})
     fill!(dx,0)
     _,K = size(x)
-    I,J = size(y)
+    I,J = size(ypred)
     for k=1:K
         x1,x2,a = x[:,k]
         for j=1:J
@@ -65,7 +73,7 @@ end
 using Base.LinAlg.axpy!
 
 # Training:
-function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=100, lr=0.01)
+function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=40, lr=0.00025)
     ypred = similar(ygold)
     dx = similar(x)
     for i=1:iter
@@ -73,7 +81,7 @@ function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=100, lr=0.01)
         loss = mloss(ypred, ygold)
         mback(x, ypred, ygold, dx)
         axpy!(-lr, dx, x)
-        println((i,loss))
+        println((i,loss,vecnorm(dx),int(512*x[:])))
     end
 end
 
