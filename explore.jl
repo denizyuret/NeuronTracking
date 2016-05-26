@@ -1,9 +1,9 @@
 using ImageMagick,FileIO,JLD,FixedPointNumbers
-const imgdir = "/mnt/kufs/scratch/vunal15/Images/150723_exp3_GCAMP_Images"
+const imgdir = "/mnt/ai/work/askin/150723_exp3_GCAMP_Images"
 
 # Save all images as a list of images
 function img2jld()
-    img = Any[]
+    global img = Any[]
     for i=1:7002
         i%100==0 && print(".")
         push!(img, load("$imgdir/$i.tiff"))
@@ -14,7 +14,7 @@ end
 
 # Save all images as a 512x512x7002 array of UFixed16 values
 function img3jld(img)
-    img3=Array(UFixed16,512,512,7002)
+    global img3=Array(UFixed16,512,512,7002)
     for i=1:7002; copy!(img3,1+(i-1)*512*512,img[i].data,1,512*512); end
     JLD.save("img3.jld","img3",img3)
 end
@@ -80,4 +80,13 @@ function pixeldistance(; r=50)
         end
     end
     (dr, dv)
+end
+
+function brighten(img)
+    c = copy(img)
+    for i=1:length(c.data)
+        c.data[i] = min(1, 5*c.data[i])
+        # c.data[i] = max(0, 1-4*c.data[i])
+    end
+    return c
 end
