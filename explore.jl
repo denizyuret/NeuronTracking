@@ -20,17 +20,34 @@ function img3jld(img)
 end
 
 # Find centers as local maxima of pixel values: doesn't work very well
-function centers(x::Matrix{UFixed16}; r=100)
+function centers{T}(x::Matrix{T}; r=30)
     c = Any[]
     for i=1:size(x,1)
         for j=1:size(x,2)
             localmax(x,i,j,r) && push!(c, (i,j,x[i,j]))
         end
     end
-    return c
+    return sort(c, by=(x->x[3]), rev=true)
 end
 
-function localmax(x::Matrix{UFixed16}, i, j, r)
+function findmax2(a)
+    v,i = findmax(a)
+    v,ind2sub(a,i)
+end
+
+function centers32{T}(x::Matrix{T}; r=32)
+    c = Any[]
+    for j=1:r:size(x,2)
+        jj=min(j+r-1,size(x,2))
+        for i=1:r:size(x,1)
+            ii=min(i+r-1,size(x,1))
+            push!(c, ((i+ii)/2,(j+jj)/2,mean(sub(x,i:ii,j:jj))))
+        end
+    end
+    return sort(c, by=(x->x[3]), rev=true)
+end
+
+function localmax{T}(x::Matrix{T}, i, j, r)
     for ii=max(1,i-r):min(size(x,1),i+r)
         for jj=max(1,j-r):min(size(x,2),j+r)
             if x[i,j] < x[ii,jj]

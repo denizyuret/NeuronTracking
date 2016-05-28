@@ -2,6 +2,7 @@
 # Centers at the edge have a large gradient.
 # Small centers have no gradient.
 # Few bright pixels close by beat lots of bright pixels far away and capture the center.
+# We need to initialize well and use the model to correct for small shifts.
 
 # Forward model:
 # Input: (3,k) matrix of x,y,a triples.
@@ -10,24 +11,89 @@
 # Ignore 3D for now.
 # x[1,k],x[2,k] in [0,1], x[3,k] in [.2,.4]?
 
-# lambda = 2500.0
-lambda = 1000.0
-alpha = 0.2
-baseline = 0.0
+lambda = 2000.0
+baseline = 0.032
+coor1 = Array(Float32,512,512); for i=1:512,j=1:512; coor1[i,j]=i/512; end
+coor2 = Array(Float32,512,512); for i=1:512,j=1:512; coor2[i,j]=j/512; end
+temp = [ Array(Float32,512,512) for i=1:10 ]
 
-function mforw{T}(x::Matrix{T},y::Matrix{T})
-    fill!(y,0)
-    _,K = size(x)
-    I,J = size(y)
-    fill!(y, baseline)
-    for k=1:K
-        for j=1:J
-            for i=1:I
-                y[i,j] += alpha * exp(-lambda * ((x[1,k]-i/I)^2 + (x[2,k]-j/J)^2))
+function mforw{T}(par::Matrix{T},img::Matrix{T})
+    fill!(img, baseline)
+    for k=1:size(par,2)
+        (x,y,a) = par[:,k]
+        broadcast!(-, temp[1], coor1, x)
+        broadcast!(*, temp[1], temp[1], temp[1])
+        broadcast!(-, temp[2], coor2, y)
+        broadcast!(*, temp[2], temp[2], temp[2])
+        broadcast!(+, temp[2], temp[1], temp[2])
+        broadcast!(*, temp[2], temp[2], -lambda)
+        broadcast!(exp, temp[2], temp[2])
+        broadcast!(*, temp[2], temp[2], a)
+        broadcast!(+, img, img, temp[2])
+    end
+    return img
+end
+
+function mforw0{T}(par::Matrix{T},img::Matrix{T})
+    _,K = size(par)
+    I,J = size(img)
+    fill!(img, baseline)
+    @inbounds @simd for j=1:J
+        @inbounds for i=1:I
+            @inbounds for k=1:K
+                (x,y,a)=par[:,k]
+                img[i,j] += a * exp(-lambda * ((x-i/I)^2 + (y-j/J)^2))
             end
         end
     end
-    return y
+    return img
+end
+
+# Backward gradient:
+function mback{T}(par::Matrix{T},pred::Matrix{T},gold::Matrix{T},diff::Matrix{T})
+    fill!(diff,0)
+    broadcast!(-, temp[10], pred, gold)
+    for k=1:size(par,2)
+        (x,y,a) = par[:,k]
+        broadcast!(-, temp[1], coor1, x)
+        broadcast!(-, temp[2], coor2, y)
+        broadcast!(*, temp[3], temp[1], temp[1])
+        broadcast!(*, temp[4], temp[2], temp[2])
+        broadcast!(+, temp[5], temp[3], temp[4])
+        broadcast!(*, temp[5], temp[5], -lambda)
+        broadcast!(exp, temp[5], temp[5])
+        broadcast!(*, temp[5], temp[5], temp[10]) # delta*exp(-lambda*d2)
+        broadcast!(*, temp[6], temp[5], 2*a*lambda)
+        broadcast!(*, temp[1], temp[1], temp[6])
+        broadcast!(*, temp[2], temp[2], temp[6])
+        diff[1,k] += sum(temp[1])
+        diff[2,k] += sum(temp[2])
+        diff[3,k] += sum(temp[5])
+    end
+    return diff
+end
+
+function mback0{T}(par::Matrix{T},pred::Matrix{T},gold::Matrix{T},diff::Matrix{T})
+    fill!(diff,0)
+    _,K = size(par)
+    I,J = size(pred)
+    for j=1:J
+        for i=1:I
+            delta = pred[i,j]-gold[i,j]
+            for k=1:K
+                (x,y,a) = par[:,k]
+                di = (i/I - x)
+                dj = (j/J - y)
+                d2 = di*di + dj*dj
+                tmp1 = delta * exp(-lambda * d2)
+                tmp2 = 2 * a * lambda * tmp1
+                diff[1,k] += tmp2 * di
+                diff[2,k] += tmp2 * dj
+                diff[3,k] += tmp1
+            end
+        end
+    end
+    diff
 end
 
 # Loss function:
@@ -42,48 +108,46 @@ function mlossxy{T}(x::Matrix{T},ygold::Matrix{T})
     mloss(ypred, ygold)
 end
 
-# Backward gradient:
-function mback{T}(x::Matrix{T},ypred::Matrix{T},ygold::Matrix{T},dx::Matrix{T})
-    fill!(dx,0)
-    _,K = size(x)
-    I,J = size(ypred)
-    for k=1:K
-        x1,x2 = x[:,k]
-        for j=1:J
-            dj = (j/J-x2)
-            for i=1:I
-                di = (i/I-x1)
-                d2 = di*di + dj*dj
-                ydiff = ypred[i,j]-ygold[i,j]
-                expd2 = exp(-lambda * d2)
-                tmp = ydiff * expd2 * 2 * alpha * lambda
-                dx[1,k] += tmp * di
-                dx[2,k] += tmp * dj
-            end
-        end
-    end
-    dx
-end
-
 # Initialize randomly:
 # At the edges it shoots out to match dark pixels.
-function minit{T}(x::Matrix{T}=Array(Float32,2,3))
-    for k=1:length(x)
-        x[k] = 0.2*(2*rand()-1)+0.6
+# function minit{T}(x::Matrix{T}=Array(Float32,2,3))
+#     for k=1:length(x)
+#         x[k] = 0.2*(2*rand()-1)+0.6
+#     end
+#     x
+# end
+
+function minit{T}(x::Matrix{T},y::Matrix{T})
+    c = centers(y)
+    for k=1:size(x,2)
+        x[1,k] = c[k][1]/size(y,1)
+        x[2,k] = c[k][2]/size(y,2)
+        x[3,k] = c[k][3]-baseline
+        # x[4,k] = lambda
     end
     x
 end
 
 using Base.LinAlg.axpy!
 using ImageView
-mview(y;cmax=alpha)=view(y',clim=[0,cmax])
-mview(c,y;cmax=alpha)=view(c,y',clim=[0,cmax])
+
+function mview(y;cmax=maximum(y))
+    global _mview
+    try
+        view(_mview,y')
+    catch e
+        (_mview,_) = view(y',clim=[0,cmax],name="mview")
+    end
+end
+
+# mview(y;cmax=alpha)=view(y',clim=[0,cmax])
+# mview(c,y;cmax=alpha)=view(c,y',clim=[0,cmax])
 
 # Training:
-function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=40, lr=0.00025)
-    global alpha = maximum(ygold)/2
+function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=50, gmin=1.0, lr=0.0004)
     global yview = copy(ygold)
-    c,_ = mview(yview)
+    alpha = maximum(ygold)/2
+    mview(yview)
     ypred = similar(ygold)
     dx = similar(x)
     for i=1:iter
@@ -91,10 +155,13 @@ function mtrain{T}(x::Matrix{T}, ygold::Matrix{T}; iter=40, lr=0.00025)
         loss = Float32(mloss(ypred, ygold))
         mback(x, ypred, ygold, dx)
         axpy!(-lr, dx, x)
-        println((i,loss,vecnorm(dx),round(Int64,512*x[:])))
+        nx = vecnorm(dx)
+        println((i,loss,nx,round(Int64,512*x[:])))
         axpy!(1, ypred, copy!(yview,ygold))
-        mview(c, yview)
+        mview(yview)
+        nx < gmin && break
     end
+    x
 end
 
 # Gradient check:

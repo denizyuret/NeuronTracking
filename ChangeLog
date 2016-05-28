@@ -1,0 +1,21 @@
+2016-05-28  Deniz Yuret  <dyuret@ku.edu.tr>
+
+	* z-model: Looking at the brightness of the same neuron across
+	levels, the optimal lambda_z~3500.  Given that lambda_x = 2000,
+	this corresponds to equivalent dz=0.756dx.  i.e. roughly the same
+	decrease is observed when we are 4 pixels away in x direction or 3
+	pixels (levels) in the z direction.  I tried it again with raw
+	pixel values instead of fitted activations and got 5700.  Better
+	make this a parameter.  Fit a whole 20 image block [18:37] to
+	optimize the parameters?  Or just write the sequential stuff.  But
+	how can we initialize z values?
+
+	* view: When the image on the canvas changes, the pixel values of
+	the original image are still reported.  Debug
+	display.jl:updatexylabel.
+
+	Can use the transpose option for canvas.
+
+	* jumps: The scenes jump at 18,38,58 etc, which is inconsistent
+	with the z-levels from askin.
+
