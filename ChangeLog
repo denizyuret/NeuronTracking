@@ -1,5 +1,11 @@
 2016-05-28  Deniz Yuret  <dyuret@ku.edu.tr>
 
+	* zmodel.jl: first successful tracking.  need to play with
+	hyperparameters to optimize.  loses centers between blocks of 20.
+	need to draw circles instead of adding two images to see what is
+	going on.  need to make use of relative location info, currently
+	each neuron is allowed to move independently in the model.
+
 	* z-model: Looking at the brightness of the same neuron across
 	levels, the optimal lambda_z~3500.  Given that lambda_x = 2000,
 	this corresponds to equivalent dz=0.756dx.  i.e. roughly the same

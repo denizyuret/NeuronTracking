@@ -12,10 +12,13 @@
 # x[1,k],x[2,k] in [0,1], x[3,k] in [.2,.4]?
 
 lambda = 2000.0
-baseline = 0.032
+baseline = 0.03
 coor1 = Array(Float32,512,512); for i=1:512,j=1:512; coor1[i,j]=i/512; end
 coor2 = Array(Float32,512,512); for i=1:512,j=1:512; coor2[i,j]=j/512; end
 temp = [ Array(Float32,512,512) for i=1:10 ]
+
+zfactor = 2
+zlevel(z)=mod1(z+3,20)
 
 function mforw{T}(par::Matrix{T},img::Matrix{T})
     fill!(img, baseline)
@@ -117,13 +120,13 @@ end
 #     x
 # end
 
-function minit{T}(x::Matrix{T},y::Matrix{T})
+function minit{T}(y::Matrix{T})
+    x = Array(T,3,3)
     c = centers(y)
     for k=1:size(x,2)
         x[1,k] = c[k][1]/size(y,1)
         x[2,k] = c[k][2]/size(y,2)
         x[3,k] = c[k][3]-baseline
-        # x[4,k] = lambda
     end
     x
 end
@@ -178,6 +181,7 @@ function mcheck{T}(x::Matrix{T}, ygold::Matrix{T}; eps=1e-3)
         x[i] = xi + eps
         mforw(x, ypred)
         f2 = mloss(ypred, ygold)
+        x[i] = xi
         df = (f2-f1)/(2*eps)
         println((i,df,dx[i]))
     end
