@@ -14,18 +14,20 @@ Z1 = Z0+div(Z,2)                # middle of the block
 X1 = Array(Float32,X,X); for i=1:X,j=1:X; X1[i,j]=i/X; end
 X2 = Array(Float32,X,X); for i=1:X,j=1:X; X2[i,j]=j/X; end
 
-# we map 1:Z to 0:ZX*Z/X in the z direction.
-zcoor(i)=(mod1(i-Z0,Z) * ZX / X)
+# we map 1:Z to 0:ZX*Z/X in the z direction. some conversions:
+z2x(i::Int)=Float32(mod1(i-Z0,Z) * ZX / X)
+x2p{T}(x::T)=round(Int,x*X)
+p2x(p::Int)=Float32(p/X)
 
 # alloc some temporary arrays
-M = [ Array(Float32,X,X) for i=1:13 ]
-W = [ Array(Float32,4,N) for i=1:7 ]
+M = [ Array(Float32,X,X) for i=1:20 ]
+W = [ Array(Float32,4,N) for i=1:10 ]
 
 
 function zforw{T}(par::Matrix{T},out::Matrix{T}=M[1]; img=Z1,
                   m1::Matrix{T}=M[2], m2::Matrix{T}=M[3])
     fill!(out, A0)                              # A0 is the background brightness
-    X3 = zcoor(img)                             # X1,X2,X3 represent pixel positions
+    X3 = z2x(img)                             # X1,X2,X3 represent pixel positions
     for k=1:size(par,2)
         (x1,x2,x3,a) = par[:,k]                 # x1,x2,x3 represent center position, a is activation
         broadcast!(-, m1, X1, x1)
@@ -45,7 +47,7 @@ end
 # Backward gradient:
 function zback{T}(curr::Matrix{T},prev::Matrix{T},pred::Matrix{T},gold::Matrix{T},diff::Matrix{T}=M[4]; img=Z1,
                   delta::Matrix{T}=M[5], dx1::Matrix{T}=M[6], dx2::Matrix{T}=M[7], m1::Matrix{T}=M[8], m2::Matrix{T}=M[9])
-    X3 = zcoor(img)
+    X3 = z2x(img)
     broadcast!(-, diff, curr, prev)
     broadcast!(*, diff, diff, Tau)
     broadcast!(-, delta, pred, gold)
@@ -103,17 +105,16 @@ end
 # Training:
 function ztrain{T}(curr::Matrix{T}, prev::Matrix{T}, gold::Matrix{T}; img=Z1, iter=50, gmin=1f-5, lr=50f0,
                    pred::Matrix{T}=M[12], disp::Matrix{T}=M[13], diff::Matrix{T}=W[3])
-    zview(gold)
+    zdraw(curr, gold, img=img)
     for i=1:iter
         zforw(curr, pred, img=img)
-        loss = zloss(curr, prev, pred, gold, img=img)
         zback(curr, prev, pred, gold, diff, img=img)
         Base.LinAlg.axpy!(-lr, diff, curr)
-        gnorm = vecnorm(diff)
-        println((i,:loss,loss,:gnorm,gnorm,:x,round(Int64,X*curr[:])))
-        zview(broadcast!(+,disp,gold,pred))
-        gnorm < gmin && break
+        zdraw(curr, gold, img=img)
+        vecnorm(diff) < gmin && break
     end
+    loss = zloss(curr, prev, zforw(curr,pred,img=img), gold, img=img)
+    println((:img,img,:loss,loss,:gnorm,vecnorm(diff),:x,round(Int64,X*curr[:])))
     curr
 end
 
@@ -130,9 +131,10 @@ function ztrack{T}(y::Array{T}, img1=1, img2=size(y,3);
         for i=i2:-1:max(1,i1)
             ztrain(curr, prev, y[:,:,i], img=i)
             copy!(prev, curr)
+            i==i2 && copy!(cent, curr)
         end
         copy!(prev, cent); copy!(curr, cent)
-        for i=i2:i3
+        for i=i2+1:i3
             ztrain(curr, prev, y[:,:,i], img=i)
             copy!(prev, curr)
         end
@@ -156,8 +158,8 @@ function zinit{T}(y::Matrix{T};img=Z1)
     for n=1:N
         x[1,n] = c[n][1]/size(y,1)
         x[2,n] = c[n][2]/size(y,2)
-        x[3,n] = zcoor(img)
-        x[4,n] = c[n][3]-A0
+        x[3,n] = z2x(img)
+        x[4,n] = mean(y[c[n][1]-2:c[n][1]+2,c[n][2]-2:c[n][2]+2])-A0
     end
     return x
 end
@@ -194,3 +196,18 @@ function zview(y;cmax=maximum(y))
     end
 end
 
+function zdraw{T}(curr::Matrix{T}, gold::Matrix{T}; img=Z1, temp::Matrix{T}=M[14])
+    copy!(temp, gold)
+    X3 = z2x(img)                             # X1,X2,X3 represent pixel positions
+    # f = a0 + ai * exp(-lambda/2 * d2)
+    dmin = -log(0.2)/(Lambda/2)
+    dmax = -log(0.1)/(Lambda/2)
+    for k=1:size(curr,2)
+        (x1,x2,x3,a) = curr[:,k]                 # x1,x2,x3 represent center position, a is activation
+        for X1=x1-20/X:1/X:x1+20/X, X2=x2-20/X:1/X:x2+20/X
+            d2 = (x1-X1)^2 + (x2-X2)^2 + (x3-X3)^2
+            dmin <= d2 <= dmax && (temp[x2p(X1),x2p(X2)]=0.0)
+        end
+    end
+    zview(temp)
+end

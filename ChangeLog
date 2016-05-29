@@ -1,3 +1,9 @@
+2016-05-29  Deniz Yuret  <dyuret@ku.edu.tr>
+
+	* zmodel.jl: fixed drawing.  still suspect hyperparameters.  need
+	to fit gaussian in 3D to see the exact centers and the z/x
+	relation.
+
 2016-05-28  Deniz Yuret  <dyuret@ku.edu.tr>
 
 	* zmodel.jl: first successful tracking.  need to play with
