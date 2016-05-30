@@ -1,4 +1,26 @@
+2016-05-30  Deniz Yuret  <dyuret@ku.edu.tr>
+
+	* shift: Vahdet says there is a slight xy shift every z-level,
+	which causes the 17-18 jump.  How much is the shift?
+	julia> ztrack(img32,18,57)
+	(37,[316,235,16,31,237,340,15,29,320,286,20,37])
+	(38,[269,215,17,37,221,338,20,28,287,275,15,29])
+	diff:  47  20  -1  -6  16  2  -5  1  33  11  5  8
+
+	Looking at different transitions, I can't get anything consistent.
+	With visual inspection I got dx=2.5, dy=1.0 pixels per frame drift.
+
 2016-05-29  Deniz Yuret  <dyuret@ku.edu.tr>
+
+	* gauss.jl: Tried exponential and power law, compared to gaussian.
+	Exponential is worse, power law is better.  The z/x ratio is
+	consistently around 1.57, i.e. one z level is equivalent to 1.57 x
+	pixels.  For Gaussian, one stdev on xy plane is 11.3 pixels, in z
+	direction 7.3 levels.  For zmodel, this corresponds to a Lambda of
+	2053 and ZX=1.5.  For 1/(1+(L/2)r^2) power-law model, L is 8160.
+	Or if we use 1/(1+(r/R)^2), then R is 8 pixels.  Compare with
+	sigma=11.3 pixels with the Gaussian.  Square law drops to half the
+	peak value in 8 pixels, Gaussian in 13.4 pixels.
 
 	* zmodel.jl: fixed drawing.  still suspect hyperparameters.  need
 	to fit gaussian in 3D to see the exact centers and the z/x
